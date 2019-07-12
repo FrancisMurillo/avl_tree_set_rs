@@ -1,18 +1,10 @@
 use super::tree::{AvlNode, AvlTree};
-use core::iter::{Chain, Filter, Map, Peekable};
 use std::cmp::Ordering;
-use std::iter::FromIterator;
 use std::mem::{replace, swap};
 
 #[derive(Debug, PartialEq)]
 pub struct AvlTreeSet<T: Ord> {
     root: AvlTree<T>,
-}
-
-impl<'a, T: 'a + Ord> Default for AvlTreeSet<T> {
-    fn default() -> Self {
-        Self { root: None }
-    }
 }
 
 impl<'a, T: 'a + Ord> AvlTreeSet<T> {
@@ -21,7 +13,7 @@ impl<'a, T: 'a + Ord> AvlTreeSet<T> {
     }
 
     pub fn insert(&mut self, value: T) -> bool {
-        let mut prev_ptrs = Vec::<*mut AvlNode<T>>::default();
+        let mut prev_ptrs = Vec::<*mut AvlNode<T>>::new();
         let mut current_tree = &mut self.root;
 
         while let Some(current_node) = current_tree {
@@ -53,7 +45,7 @@ impl<'a, T: 'a + Ord> AvlTreeSet<T> {
     }
 
     pub fn take(&mut self, value: &T) -> Option<T> {
-        let mut prev_ptrs = Vec::<*mut AvlNode<T>>::default();
+        let mut prev_ptrs = Vec::<*mut AvlNode<T>>::new();
         let mut current_tree = &mut self.root;
         let mut target_value = None;
 
@@ -117,7 +109,7 @@ impl<'a, T: 'a + Ord> AvlTreeSet<T> {
                 target_node.update_height();
             } else {
                 let mut next_tree = right_tree;
-                let mut tracked_nodes = Vec::<*mut AvlNode<T>>::default();
+                let mut tracked_nodes = Vec::<*mut AvlNode<T>>::new();
 
                 while let Some(next_left_node) = next_tree {
                     if next_left_node.left.is_some() {
@@ -203,7 +195,7 @@ impl<'a, T: 'a + Ord> AvlTreeSet<T> {
             return;
         }
 
-        let mut remaining_nodes = Vec::<AvlNode<T>>::default();
+        let mut remaining_nodes = Vec::<AvlNode<T>>::new();
 
         remaining_nodes.push(*other.root.take().unwrap());
 
@@ -243,39 +235,9 @@ impl<'a, T: 'a + Ord> AvlTreeSet<T> {
 
     fn node_iter(&'a self) -> impl Iterator<Item = &'a AvlNode<T>> + 'a {
         AvlTreeSetNodeIter {
-            prev_nodes: Vec::default(),
+            prev_nodes: Vec::new(),
             current_tree: &self.root,
         }
-    }
-
-    pub fn union(&'a self, other: &'a Self) -> impl Iterator<Item = &'a T> + 'a {
-        AvlTreeSetUnionIter {
-            left_iter: self.iter().peekable(),
-            right_iter: other.iter().peekable(),
-        }
-    }
-
-    pub fn difference(&'a self, other: &'a Self) -> impl Iterator<Item = &'a T> + 'a {
-        self.iter().filter(move |&value| !other.contains(value))
-    }
-
-    pub fn symmetric_difference(&'a self, other: &'a Self) -> impl Iterator<Item = &'a T> + 'a {
-        AvlTreeSetUnionIter {
-            left_iter: self.difference(&other).peekable(),
-            right_iter: other.difference(&self).peekable(),
-        }
-    }
-}
-
-impl<T: Ord> FromIterator<T> for AvlTreeSet<T> {
-    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        let mut set = Self::default();
-
-        for i in iter {
-            set.insert(i);
-        }
-
-        set
     }
 }
 
@@ -327,40 +289,6 @@ impl<'a, T: 'a + Ord> Iterator for AvlTreeSetNodeIter<'a, T> {
 }
 
 pub type AvlTreeSetValueIter<'a, T, F> = Map<AvlTreeSetNodeIter<'a, T>, F>;
-
-pub struct AvlTreeSetUnionIter<'a, T: 'a + Ord, I: Iterator<Item = &'a T>> {
-    left_iter: Peekable<I>,
-    right_iter: Peekable<I>,
-}
-
-pub type AvlTreeSetDifferenceIter<'a, T, F, P> = Filter<Map<AvlTreeSetNodeIter<'a, T>, F>, P>;
-pub type AvlTreeSetSymmetricDifferenceIter<'a, T, F, P> =
-    Chain<AvlTreeSetDifferenceIter<'a, T, F, P>, AvlTreeSetDifferenceIter<'a, T, F, P>>;
-
-impl<'a, T: 'a + Ord, I: Iterator<Item = &'a T>> Iterator for AvlTreeSetUnionIter<'a, T, I> {
-    type Item = &'a T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(&left_node) = self.left_iter.peek() {
-            if let Some(&right_node) = self.right_iter.peek() {
-                match left_node.cmp(&right_node) {
-                    Ordering::Less => self.left_iter.next(),
-                    Ordering::Equal => {
-                        self.right_iter.next();
-                        self.left_iter.next()
-                    }
-                    Ordering::Greater => self.right_iter.next(),
-                }
-            } else {
-                self.left_iter.next()
-            }
-        } else if self.right_iter.peek().is_some() {
-            self.right_iter.next()
-        } else {
-            None
-        }
-    }
-}
 
 #[cfg(test)]
 mod specs {
@@ -415,7 +343,7 @@ mod specs {
                 });
 
                 ctx.it(".insert should work", |_| {
-                    let mut set = AvlTreeSet::<isize>::default();
+                    let mut set = AvlTreeSet::<isize>::new();
                     let value = isize::dummy();
 
                     assert!(set.insert(value));
@@ -433,7 +361,7 @@ mod specs {
                 });
 
                 ctx.it(".is_empty should work", |_| {
-                    let mut set = AvlTreeSet::<String>::default();
+                    let mut set = AvlTreeSet::<String>::new();
 
                     assert!(set.is_empty());
 
@@ -561,7 +489,7 @@ mod specs {
 
     #[bench]
     fn bench_insert(b: &mut Bencher) {
-        let mut set = AvlTreeSet::<usize>::default();
+        let mut set = AvlTreeSet::<usize>::new();
 
         b.iter(|| {
             for value in 1..10000 {

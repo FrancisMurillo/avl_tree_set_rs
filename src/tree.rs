@@ -13,19 +13,11 @@ pub type AvlTree<T> = Option<Box<AvlNode<T>>>;
 
 impl<'a, T: 'a + Ord> AvlNode<T> {
     pub fn left_height(&self) -> usize {
-        self.left
-            .as_ref()
-            .map(|left| left.height)
-            .or(Some(0))
-            .unwrap()
+        self.left.as_ref().map_or(0, |left| left.height)
     }
 
     pub fn right_height(&self) -> usize {
-        self.right
-            .as_ref()
-            .map(|right| right.height)
-            .or(Some(0))
-            .unwrap()
+        self.right.as_ref().map_or(0, |right| right.height)
     }
 
     pub fn update_height(&mut self) {
@@ -126,7 +118,6 @@ impl<'a, T: 'a + Ord> AvlNode<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::prelude::*;
 
     #[derive(Clone, Default, Debug)]
     struct Environment {}
