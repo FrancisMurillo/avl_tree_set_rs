@@ -2,32 +2,23 @@ use super::tree::{AvlNode, AvlTree};
 use core::iter::{Chain, Filter, Map, Peekable};
 use std::cmp::Ordering;
 use std::iter::FromIterator;
-use std::mem::{replace, swap};
+use std::mem::replace;
 
 #[cfg(test)]
 use quickcheck::{Arbitrary, Gen};
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct AvlTreeSet<T: Ord>
-where
-    T: std::fmt::Debug,
-{
+pub struct AvlTreeSet<T: Ord> {
     root: AvlTree<T>,
 }
 
-impl<'a, T: 'a + Ord> Default for AvlTreeSet<T>
-where
-    T: std::fmt::Debug,
-{
+impl<'a, T: 'a + Ord> Default for AvlTreeSet<T> {
     fn default() -> Self {
         Self { root: None }
     }
 }
 
-impl<'a, T: 'a + Ord> AvlTreeSet<T>
-where
-    T: std::fmt::Debug,
-{
+impl<'a, T: 'a + Ord> AvlTreeSet<T> {
     pub fn new() -> Self {
         Self { root: None }
     }
@@ -92,15 +83,14 @@ where
 
         let target_node = target_value.unwrap();
         let mut taken_value = None;
+        let mut prev_ptr_iter = prev_ptrs.into_iter().rev();
 
-        println!("ASD");
         if target_node.left.is_none() || target_node.right.is_none() {
             if let Some(left_node) = target_node.left.take() {
                 taken_value = Some(replace(target_node, *left_node).value);
             } else if let Some(right_node) = target_node.right.take() {
                 taken_value = Some(replace(target_node, *right_node).value);
-            } else if let Some(prev_ptr) = prev_ptrs.pop() {
-                println!("BRANCH");
+            } else if let Some(prev_ptr) = prev_ptr_iter.next() {
                 let prev_node = unsafe { &mut *prev_ptr };
 
                 let inner_value = if let Some(left_node) = prev_node.left.as_ref() {
@@ -117,6 +107,14 @@ where
 
                 prev_node.update_height();
                 prev_node.rebalance();
+
+                for node_ptr in prev_ptr_iter {
+                    let node = unsafe { &mut *node_ptr };
+                    node.update_height();
+                    node.rebalance();
+                }
+
+                return taken_value;
             } else {
                 return Some(self.root.take().unwrap().value);
             }
@@ -128,9 +126,6 @@ where
 
                 taken_value = Some(replace(&mut target_node.value, right_node.value));
                 replace(&mut target_node.right, right_node.right.take());
-
-                target_node.update_height();
-                target_node.rebalance();
             } else {
                 let mut next_tree = right_tree;
                 let mut tracked_ptrs = Vec::<*mut AvlNode<T>>::new();
@@ -155,19 +150,15 @@ where
                 for node_ptr in ptr_iter {
                     let node = unsafe { &mut *node_ptr };
                     node.update_height();
-                    println!("INNER_HEIGHT - {}", &node.height);
                     node.rebalance();
                 }
             }
         }
 
-        println!("TARGET_NODE");
         target_node.update_height();
-        println!("HEIGHT - {}", &target_node.height);
         target_node.rebalance();
 
-        dbg!(&prev_ptrs);
-        for node_ptr in prev_ptrs.into_iter().rev() {
+        for node_ptr in prev_ptr_iter {
             let node = unsafe { &mut *node_ptr };
             node.update_height();
             node.rebalance();
@@ -289,10 +280,7 @@ where
     }
 }
 
-impl<T: Ord> FromIterator<T> for AvlTreeSet<T>
-where
-    T: std::fmt::Debug,
-{
+impl<T: Ord> FromIterator<T> for AvlTreeSet<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let mut set = Self::new();
 
@@ -305,18 +293,12 @@ where
 }
 
 #[derive(Debug)]
-pub struct AvlTreeSetNodeIter<'a, T: Ord>
-where
-    T: std::fmt::Debug,
-{
+pub struct AvlTreeSetNodeIter<'a, T: Ord> {
     prev_nodes: Vec<&'a AvlNode<T>>,
     current_tree: &'a AvlTree<T>,
 }
 
-impl<'a, T: 'a + Ord> Iterator for AvlTreeSetNodeIter<'a, T>
-where
-    T: std::fmt::Debug,
-{
+impl<'a, T: 'a + Ord> Iterator for AvlTreeSetNodeIter<'a, T> {
     type Item = &'a AvlNode<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -396,10 +378,7 @@ impl<'a, T: 'a + Ord, I: Iterator<Item = &'a T>> Iterator for AvlTreeSetUnionIte
 // Refit and copied from quickcheck
 // https://docs.rs/quickcheck/0.8.5/src/quickcheck/arbitrary.rs.html#385-395
 #[cfg(test)]
-impl<T: Arbitrary + Ord> Arbitrary for AvlTreeSet<T>
-where
-    T: std::fmt::Debug,
-{
+impl<T: Arbitrary + Ord> Arbitrary for AvlTreeSet<T> {
     fn arbitrary<G: Gen>(g: &mut G) -> Self {
         let vec: Vec<T> = Arbitrary::arbitrary(g);
         vec.into_iter().collect()
@@ -412,7 +391,7 @@ where
 }
 
 #[cfg(test)]
-mod specs {
+mod properties {
     use super::*;
     use fake::dummy::Dummy;
     use itertools::{all, assert_equal, equal, Itertools};
@@ -605,14 +584,6 @@ mod specs {
         ));
     }
 
-    #[test]
-    fn sandbox() {
-        let this_set = (1..4).collect::<AvlTreeSet<_>>();
-        let other_set = (3..7).collect::<AvlTreeSet<_>>();
-
-        dbg!(this_set.union(&other_set).collect::<Vec<_>>());
-    }
-
     #[quickcheck]
     fn iterator_parity(xs: Vec<usize>) -> bool {
         let avl_set = xs.iter().collect::<AvlTreeSet<_>>();
@@ -668,12 +639,7 @@ mod specs {
 
         let tilted_factor = root_node.balance_factor();
 
-        dbg!(vec![
-            (balance_factor - tilted_factor),
-            balance_factor,
-            tilted_factor
-        ]);
-        balance_factor - tilted_factor >= -2
+        balance_factor - tilted_factor >= 2
     }
 
     #[quickcheck]
@@ -745,6 +711,19 @@ mod specs {
     }
 
     #[quickcheck]
+    fn take_parity(xs: Vec<usize>) -> bool {
+        let odds = xs
+            .iter()
+            .cloned()
+            .filter(|x| x % 2 == 1)
+            .collect::<Vec<_>>();
+        let mut avl_set = odds.iter().cloned().collect::<AvlTreeSet<_>>();
+        let mut btree_set = odds.iter().cloned().collect::<BTreeSet<_>>();
+
+        all(xs.iter(), |x| avl_set.take(x) == btree_set.take(x))
+    }
+
+    #[quickcheck]
     fn balanced_taken_nodes(xs: Vec<usize>) -> bool {
         let odds = xs
             .iter()
@@ -761,61 +740,16 @@ mod specs {
     }
 
     #[quickcheck]
-    fn take_parity(xs: Vec<usize>) -> bool {
-        let odds = xs
-            .iter()
-            .cloned()
-            .filter(|x| x % 2 == 1)
-            .collect::<Vec<_>>();
-        let mut avl_set = odds.iter().cloned().collect::<AvlTreeSet<_>>();
-        let mut btree_set = odds.iter().cloned().collect::<BTreeSet<_>>();
+    fn height_taken_nodes(xs: Vec<isize>) -> bool {
+        let negatives = xs.iter().cloned().filter(|&x| x < 0).collect::<Vec<_>>();
+        let mut set = xs.iter().cloned().collect::<AvlTreeSet<_>>();
 
-        all(xs.iter(), |x| {
-            // dbg!(x);
-            // dbg!(&avl_set);
-            let a = avl_set.take(x);
-            // let b = btree_set.take(x);
-            // a == b
-            true
-        })
-    }
-
-    #[test]
-    fn main() {
-        for i in 1..100 {
-            // let xs = vec![0, 6, 1, 7, 31, 30, 2];
-            let xs = vec![0, 1, 2, 3, 4];
-            println!("VEC {:p}", &xs);
-            let mut avl_set = xs.iter().cloned().collect::<AvlTreeSet<_>>();
-            let mut odds = xs
-                .iter()
-                .cloned()
-                .filter(|x| x % 2 == 1)
-                .collect::<Vec<_>>();
-            odds = vec![0];
-
-            println!("SET {:p}", &avl_set);
-            dbg!(&avl_set);
-
-            println!("START TAKING {}", i);
-            if i == 5 {
-                for odd in odds.iter().take(3) {
-                    println!("TAKING {}", odd);
-                    avl_set.take(&odd);
-                }
-            } else {
-                for odd in odds.iter().take(3) {
-                    println!("TAKING {}", odd);
-                    avl_set.take(&odd);
-                }
-            }
-            println!("DONE TAKING");
-
-            dbg!(&avl_set.node_iter().count());
-            for node in avl_set.node_iter() {
-                dbg!(&node.value);
-                dbg!(&node.balance_factor());
-            }
+        for negative in negatives {
+            set.take(&negative);
         }
+
+        all(set.node_iter(), |node| {
+            node.height == 1 + max(node.left_height(), node.right_height())
+        })
     }
 }
