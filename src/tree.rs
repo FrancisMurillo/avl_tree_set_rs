@@ -1,9 +1,6 @@
 use std::cmp::max;
 use std::mem::{replace, swap};
 
-#[cfg(test)]
-use quickcheck::{empty_shrinker, Arbitrary, Gen};
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct AvlNode<T: Ord> {
     pub value: T,

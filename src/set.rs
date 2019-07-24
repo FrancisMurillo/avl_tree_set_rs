@@ -77,20 +77,18 @@ impl<'a, T: 'a + Ord> AvlTreeSet<T> {
             };
         }
 
-        if target_value.as_ref().is_none() {
+        if target_value.is_none() {
             return None;
         }
 
         let target_node = target_value.unwrap();
-        let mut taken_value = None;
-        let mut prev_ptr_iter = prev_ptrs.into_iter().rev();
 
-        if target_node.left.is_none() || target_node.right.is_none() {
+        let taken_value = if target_node.left.is_none() || target_node.right.is_none() {
             if let Some(left_node) = target_node.left.take() {
-                taken_value = Some(replace(target_node, *left_node).value);
+                replace(target_node, *left_node).value
             } else if let Some(right_node) = target_node.right.take() {
-                taken_value = Some(replace(target_node, *right_node).value);
-            } else if let Some(prev_ptr) = prev_ptr_iter.next() {
+                replace(target_node, *right_node).value
+            } else if let Some(prev_ptr) = prev_ptrs.pop() {
                 let prev_node = unsafe { &mut *prev_ptr };
 
                 let inner_value = if let Some(left_node) = prev_node.left.as_ref() {
@@ -103,20 +101,12 @@ impl<'a, T: 'a + Ord> AvlTreeSet<T> {
                     prev_node.right.take().unwrap().value
                 };
 
-                taken_value = Some(inner_value);
-
                 prev_node.update_height();
                 prev_node.rebalance();
 
-                for node_ptr in prev_ptr_iter {
-                    let node = unsafe { &mut *node_ptr };
-                    node.update_height();
-                    node.rebalance();
-                }
-
-                return taken_value;
+                inner_value
             } else {
-                return Some(self.root.take().unwrap().value);
+                self.root.take().unwrap().value
             }
         } else {
             let right_tree = &mut target_node.right;
@@ -124,47 +114,53 @@ impl<'a, T: 'a + Ord> AvlTreeSet<T> {
             if right_tree.as_ref().unwrap().left.is_none() {
                 let mut right_node = right_tree.take().unwrap();
 
-                taken_value = Some(replace(&mut target_node.value, right_node.value));
+                let inner_value = replace(&mut target_node.value, right_node.value);
                 replace(&mut target_node.right, right_node.right.take());
+
+                target_node.update_height();
+                target_node.rebalance();
+
+                inner_value
             } else {
                 let mut next_tree = right_tree;
-                let mut tracked_ptrs = Vec::<*mut AvlNode<T>>::new();
+                let mut inner_ptrs = Vec::<*mut AvlNode<T>>::new();
 
                 while let Some(next_left_node) = next_tree {
                     if next_left_node.left.is_some() {
-                        tracked_ptrs.push(&mut **next_left_node);
+                        inner_ptrs.push(&mut **next_left_node);
                     }
                     next_tree = &mut next_left_node.left;
                 }
 
-                let mut ptr_iter = tracked_ptrs.into_iter().rev();
-                let parent_left_node = unsafe { &mut *ptr_iter.next().unwrap() };
+                let parent_left_node = unsafe { &mut *inner_ptrs.pop().unwrap() };
                 let mut leftmost_node = parent_left_node.left.take().unwrap();
 
-                taken_value = Some(replace(&mut target_node.value, leftmost_node.value));
+                let inner_value = replace(&mut target_node.value, leftmost_node.value);
                 replace(&mut parent_left_node.left, leftmost_node.right.take());
 
                 parent_left_node.update_height();
                 parent_left_node.rebalance();
 
-                for node_ptr in ptr_iter {
+                for node_ptr in inner_ptrs.into_iter().rev() {
                     let node = unsafe { &mut *node_ptr };
                     node.update_height();
                     node.rebalance();
                 }
+
+                target_node.update_height();
+                target_node.rebalance();
+
+                inner_value
             }
-        }
+        };
 
-        target_node.update_height();
-        target_node.rebalance();
-
-        for node_ptr in prev_ptr_iter {
+        for node_ptr in prev_ptrs.into_iter().rev() {
             let node = unsafe { &mut *node_ptr };
             node.update_height();
             node.rebalance();
         }
 
-        taken_value
+        Some(taken_value)
     }
 
     pub fn remove(&mut self, value: &T) -> bool {
@@ -393,196 +389,9 @@ impl<T: Arbitrary + Ord> Arbitrary for AvlTreeSet<T> {
 #[cfg(test)]
 mod properties {
     use super::*;
-    use fake::dummy::Dummy;
-    use itertools::{all, assert_equal, equal, Itertools};
-    use rand::random;
+    use itertools::{all, equal};
     use std::cmp::max;
     use std::collections::BTreeSet;
-
-    #[derive(Clone, Default, Debug)]
-    struct Environment {}
-
-    fn check_height<T: Ord>(set: &AvlTreeSet<T>)
-    where
-        T: std::fmt::Debug,
-    {
-        set.node_iter().for_each(|node| {
-            assert_eq!(
-                node.height,
-                1 + max(node.left_height(), node.right_height())
-            );
-        });
-    }
-
-    fn check_ordering<T: Ord>(set: &AvlTreeSet<T>)
-    where
-        T: std::fmt::Debug,
-    {
-        set.node_iter().for_each(|node| {
-            if let Some(ref left_node) = node.left {
-                assert!(left_node.value < node.value);
-            }
-
-            if let Some(ref right_node) = node.right {
-                assert!(node.value < right_node.value);
-            }
-        });
-    }
-
-    #[test]
-    fn spec() {
-        rspec::run(&rspec::describe(
-            "AVL Tree Set",
-            Environment::default(),
-            |ctx| {
-                ctx.it(".from_iter and .iter should work", |_| {
-                    let mut list = (0..100)
-                        .map(|_| String::dummy())
-                        .unique()
-                        .collect::<Vec<_>>();
-                    let set = list.iter().cloned().collect::<AvlTreeSet<_>>();
-
-                    list.sort();
-
-                    assert_equal(list.iter(), set.iter());
-                });
-
-                ctx.it(".insert should work", |_| {
-                    let mut set = AvlTreeSet::<isize>::default();
-                    let value = isize::dummy();
-
-                    assert!(set.insert(value));
-                    assert!(!set.insert(value));
-                });
-
-                ctx.it(".len should work", |_| {
-                    let size = random::<u8>();
-                    let set = (0..size)
-                        .map(|_| isize::dummy())
-                        .unique()
-                        .collect::<AvlTreeSet<_>>();
-
-                    assert_eq!(set.len(), size as usize);
-                });
-
-                ctx.it(".is_empty should work", |_| {
-                    let mut set = AvlTreeSet::<String>::default();
-
-                    assert!(set.is_empty());
-
-                    set.insert(String::dummy());
-
-                    assert!(!set.is_empty());
-                });
-
-                ctx.it(".clear should work", |_| {
-                    let mut set = (0..random::<u8>())
-                        .map(|_| isize::dummy())
-                        .unique()
-                        .collect::<AvlTreeSet<_>>();
-
-                    set.clear();
-
-                    assert!(set.is_empty());
-                });
-
-                ctx.it(".remove and .take should work", |_| {
-                    let list = (0..random::<u8>())
-                        .map(|_| u8::dummy())
-                        .unique()
-                        .collect::<Vec<_>>();
-                    let mut set = list.iter().cloned().collect::<AvlTreeSet<_>>();
-
-                    for item in list {
-                        assert!(set.remove(&item));
-                        check_ordering(&set);
-                        check_height(&set);
-
-                        assert!(!set.remove(&item));
-                    }
-
-                    assert_eq!(set.take(&u8::dummy()), None);
-                });
-
-                ctx.it(".contains and .get should work", |_| {
-                    let mut set = (0..random::<u8>())
-                        .map(|_| isize::dummy())
-                        .unique()
-                        .collect::<AvlTreeSet<_>>();
-
-                    for value in set.iter() {
-                        assert!(set.contains(&value));
-                        assert_eq!(set.get(&value), Some(value));
-                    }
-
-                    let copied_values = set
-                        .iter()
-                        .take(set.len() / 2)
-                        .cloned()
-                        .collect::<Vec<isize>>();
-
-                    for value in copied_values {
-                        set.remove(&value);
-                        assert!(!set.contains(&value));
-                        assert_eq!(set.get(&value), None);
-                    }
-                });
-
-                ctx.it(".append should work", |_| {
-                    let list = (0..4).map(|_| u16::dummy()).unique().collect::<Vec<_>>();
-
-                    let (even_list, odd_list): (Vec<_>, Vec<_>) =
-                        list.iter().cloned().partition(|&n| n % 2 == 0);
-
-                    let mut even_set = even_list.iter().collect::<AvlTreeSet<_>>();
-                    let mut odd_set = odd_list.iter().collect::<AvlTreeSet<_>>();
-
-                    let odd_length = odd_set.len();
-                    let even_length = even_set.len();
-                    even_set.append(&mut odd_set);
-
-                    assert!(odd_set.is_empty());
-                    assert_eq!(even_set.len(), odd_length + even_length);
-                });
-
-                ctx.it(
-                    ".union, .difference and .symmetric_difference should work",
-                    |_| {
-                        let midpoint = (random::<u8>() + 2) as u16;
-
-                        let this_set = (0..midpoint).collect::<AvlTreeSet<u16>>();
-                        let other_set =
-                            ((midpoint - 2)..(2 * midpoint)).collect::<AvlTreeSet<u16>>();
-
-                        assert_equal(
-                            this_set.union(&other_set),
-                            (0..(2 * midpoint)).collect::<BTreeSet<u16>>().iter(),
-                        );
-
-                        assert_equal(
-                            this_set.difference(&other_set),
-                            this_set
-                                .iter()
-                                .cloned()
-                                .collect::<BTreeSet<_>>()
-                                .difference(&other_set.iter().cloned().collect::<BTreeSet<_>>()),
-                        );
-
-                        assert_equal(
-                            other_set.symmetric_difference(&this_set),
-                            other_set
-                                .iter()
-                                .cloned()
-                                .collect::<BTreeSet<_>>()
-                                .symmetric_difference(
-                                    &this_set.iter().cloned().collect::<BTreeSet<_>>(),
-                                ),
-                        );
-                    },
-                );
-            },
-        ));
-    }
 
     #[quickcheck]
     fn iterator_parity(xs: Vec<usize>) -> bool {
@@ -724,7 +533,24 @@ mod properties {
     }
 
     #[quickcheck]
-    fn balanced_taken_nodes(xs: Vec<usize>) -> bool {
+    fn take_iterator_parity(xs: Vec<i16>) -> bool {
+        let fives = xs
+            .iter()
+            .cloned()
+            .filter(|x| x % 5 == 0)
+            .collect::<Vec<_>>();
+        let mut avl_set = xs.iter().cloned().collect::<AvlTreeSet<_>>();
+        let mut btree_set = xs.iter().cloned().collect::<BTreeSet<_>>();
+
+        for five in fives {
+            assert_eq!(avl_set.take(&five), btree_set.take(&five));
+        }
+
+        equal(avl_set.iter(), btree_set.iter())
+    }
+
+    #[quickcheck]
+    fn take_balanced_nodes(xs: Vec<usize>) -> bool {
         let odds = xs
             .iter()
             .cloned()
@@ -740,7 +566,7 @@ mod properties {
     }
 
     #[quickcheck]
-    fn height_taken_nodes(xs: Vec<isize>) -> bool {
+    fn take_height_nodes(xs: Vec<isize>) -> bool {
         let negatives = xs.iter().cloned().filter(|&x| x < 0).collect::<Vec<_>>();
         let mut set = xs.iter().cloned().collect::<AvlTreeSet<_>>();
 
