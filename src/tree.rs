@@ -57,10 +57,6 @@ impl<'a, T: 'a + Ord> AvlNode<T> {
             node.update_height();
         }
 
-        if let Some(node) = self.right.as_mut() {
-            node.update_height();
-        }
-
         self.update_height();
 
         true
@@ -83,10 +79,6 @@ impl<'a, T: 'a + Ord> AvlNode<T> {
         new_right_node.left = left_right_tree;
         new_right_node.right = right_tree;
         self.right = new_right_tree;
-
-        if let Some(node) = self.left.as_mut() {
-            node.update_height();
-        }
 
         if let Some(node) = self.right.as_mut() {
             node.update_height();

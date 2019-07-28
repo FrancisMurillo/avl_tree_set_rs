@@ -1,5 +1,5 @@
 use super::tree::{AvlNode, AvlTree};
-use core::iter::{Chain, Filter, Map, Peekable};
+use core::iter::Peekable;
 use std::cmp::Ordering;
 use std::iter::FromIterator;
 use std::mem::replace;
@@ -335,16 +335,10 @@ impl<'a, T: 'a + Ord> Iterator for AvlTreeSetNodeIter<'a, T> {
     }
 }
 
-pub type AvlTreeSetValueIter<'a, T, F> = Map<AvlTreeSetNodeIter<'a, T>, F>;
-
 pub struct AvlTreeSetUnionIter<'a, T: 'a + Ord, I: Iterator<Item = &'a T>> {
     left_iter: Peekable<I>,
     right_iter: Peekable<I>,
 }
-
-pub type AvlTreeSetDifferenceIter<'a, T, F, P> = Filter<Map<AvlTreeSetNodeIter<'a, T>, F>, P>;
-pub type AvlTreeSetSymmetricDifferenceIter<'a, T, F, P> =
-    Chain<AvlTreeSetDifferenceIter<'a, T, F, P>, AvlTreeSetDifferenceIter<'a, T, F, P>>;
 
 impl<'a, T: 'a + Ord, I: Iterator<Item = &'a T>> Iterator for AvlTreeSetUnionIter<'a, T, I> {
     type Item = &'a T;
@@ -390,6 +384,7 @@ impl<T: Arbitrary + Ord> Arbitrary for AvlTreeSet<T> {
 mod properties {
     use super::*;
     use itertools::{all, equal};
+    use quickcheck::TestResult;
     use std::cmp::max;
     use std::collections::BTreeSet;
 
@@ -402,9 +397,8 @@ mod properties {
     }
 
     #[quickcheck]
-    fn insert_parity(xs: Vec<u8>, x: u8) -> bool {
-        let mut avl_set = xs.iter().cloned().collect::<AvlTreeSet<_>>();
-        let mut btree_set = xs.iter().cloned().collect::<BTreeSet<_>>();
+    fn insert_parity(mut btree_set: BTreeSet<u8>, x: u8) -> bool {
+        let mut avl_set = btree_set.iter().cloned().collect::<AvlTreeSet<_>>();
 
         avl_set.insert(x) == btree_set.insert(x)
     }
@@ -417,74 +411,74 @@ mod properties {
     }
 
     #[quickcheck]
-    fn rotate_right_preserves_order(btree: BTreeSet<u8>) -> bool {
-        let mut set = btree.iter().cloned().collect::<AvlTreeSet<_>>();
+    fn rotate_right_preserves_order(btree: BTreeSet<u8>) -> TestResult {
+        let mut set = btree.xiter().cloned().collect::<AvlTreeSet<_>>();
 
         if !(set.root.is_some() && set.root.as_mut().unwrap().rotate_right()) {
-            return true;
+            return TestResult::discard();
         }
 
-        equal(set.iter(), btree.iter())
+        TestResult::from_bool(equal(set.iter(), btree.iter()))
     }
 
     #[quickcheck]
-    fn rotate_right_tils_balance_factor(xs: Vec<u32>) -> bool {
+    fn rotate_right_tils_balance_factor(xs: Vec<u32>) -> TestResult {
         let mut set = xs.iter().cloned().collect::<AvlTreeSet<u32>>();
 
         if !set.root.is_some() {
-            return true;
+            return TestResult::discard();
         }
 
         let root_node = set.root.as_mut().unwrap();
         let balance_factor = root_node.balance_factor();
 
-        if balance_factor != 2 {
-            return true;
-        }
-
         if !root_node.rotate_right() {
-            return true;
+            return TestResult::discard();
         }
 
         let tilted_factor = root_node.balance_factor();
 
-        balance_factor - tilted_factor >= 2
+        TestResult::from_bool(balance_factor - tilted_factor >= 2)
     }
 
     #[quickcheck]
-    fn rotate_left_tils_balance_factor(xs: Vec<u32>) -> bool {
+    fn rotate_left_tils_balance_factor(xs: Vec<u32>) -> TestResult {
         let mut set = xs.iter().cloned().collect::<AvlTreeSet<_>>();
 
         if !set.root.is_some() {
-            return true;
+            return TestResult::discard();
         }
 
         let root_node = set.root.as_mut().unwrap();
         let balance_factor = root_node.balance_factor();
 
         if !root_node.rotate_left() {
-            return true;
+            return TestResult::discard();
         }
 
         let tilted_factor = root_node.balance_factor();
-        balance_factor - tilted_factor <= -2
+        TestResult::from_bool(balance_factor - tilted_factor <= -2)
     }
 
     #[quickcheck]
-    fn rotate_left_preserves_order(btree: BTreeSet<u8>) -> bool {
+    fn rotate_left_preserves_order(btree: BTreeSet<u8>) -> TestResult {
         let mut set = btree.iter().cloned().collect::<AvlTreeSet<_>>();
 
-        if !(set.root.is_some() && set.root.as_mut().unwrap().rotate_left()) {
-            return true;
+        if !set.root.is_some() {
+            return TestResult::discard();
         }
 
-        equal(set.iter(), btree.iter())
+        if !set.root.as_mut().unwrap().rotate_left() {
+            return TestResult::discard();
+        }
+
+        TestResult::from_bool(equal(set.iter(), btree.iter()))
     }
 
     #[quickcheck]
-    fn rotate_left_and_rotate_left_identity(set: AvlTreeSet<u8>) -> bool {
+    fn rotate_left_and_rotate_left_identity(set: AvlTreeSet<u8>) -> TestResult {
         if set.root.is_none() {
-            return true;
+            return TestResult::discard();
         }
 
         let mut rotated_set = set.clone();
@@ -497,7 +491,7 @@ mod properties {
             root_node.rotate_left();
         }
 
-        rotated_set == set
+        TestResult::from_bool(rotated_set == set)
     }
 
     #[quickcheck]
