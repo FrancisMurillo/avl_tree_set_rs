@@ -1,10 +1,12 @@
 [package]
-name = "avl_tree_set_rs"
+name = "avl_tree_set"
 version = "0.1.0"
 authors = ["Francis Murillo <francisavmurillo@gmail.com>"]
 edition = "2018"
 
-[dependencies]
+[[bin]]
+name = "avl_tree_set"
+path = "src/bin.rs"
 
 [dev-dependencies]
 rand = "0.6.5"
