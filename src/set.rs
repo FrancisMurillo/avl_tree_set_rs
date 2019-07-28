@@ -412,9 +412,13 @@ mod properties {
 
     #[quickcheck]
     fn rotate_right_preserves_order(btree: BTreeSet<u8>) -> TestResult {
-        let mut set = btree.xiter().cloned().collect::<AvlTreeSet<_>>();
+        let mut set = btree.iter().cloned().collect::<AvlTreeSet<_>>();
 
-        if !(set.root.is_some() && set.root.as_mut().unwrap().rotate_right()) {
+        if !set.root.is_some() {
+            return TestResult::discard();
+        }
+
+        if !set.root.as_mut().unwrap().rotate_right() {
             return TestResult::discard();
         }
 
@@ -422,9 +426,7 @@ mod properties {
     }
 
     #[quickcheck]
-    fn rotate_right_tils_balance_factor(xs: Vec<u32>) -> TestResult {
-        let mut set = xs.iter().cloned().collect::<AvlTreeSet<u32>>();
-
+    fn rotate_right_tilts_balance_factor(mut set: AvlTreeSet<u32>) -> TestResult {
         if !set.root.is_some() {
             return TestResult::discard();
         }
@@ -442,9 +444,7 @@ mod properties {
     }
 
     #[quickcheck]
-    fn rotate_left_tils_balance_factor(xs: Vec<u32>) -> TestResult {
-        let mut set = xs.iter().cloned().collect::<AvlTreeSet<_>>();
-
+    fn rotate_left_tilts_balance_factor(mut set: AvlTreeSet<u32>) -> TestResult {
         if !set.root.is_some() {
             return TestResult::discard();
         }
