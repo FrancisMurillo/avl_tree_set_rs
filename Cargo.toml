@@ -1,9 +1,15 @@
 [package]
-name = "avl_tree_set_rs"
+name = "avl_tree_set"
 version = "0.1.0"
 authors = ["Francis Murillo <francisavmurillo@gmail.com>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "avl_tree_set"
+path = "src/bin.rs"
 
-[dependencies]
+[dev-dependencies]
+rand = "0.6.5"
+itertools = "0.8"
+quickcheck = "0.8"
+quickcheck_macros = "0.8"

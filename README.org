@@ -1,0 +1,7 @@
+* Understanding Rust Through AVL Trees
+
+This Rust library is for my [[http://francismurillo.github.io/2019-07-31-Understanding-Rust-Through-AVL-Trees/][blog post]]. For any correction or suggestion
+on the post, do file an issue.
+
+If you want an AVL tree set for production instead, consider the mature
+[[https://doc.rust-lang.org/std/collections/btree_set/struct.BTreeSet.html#method.iter][BTreeSet]] which performs better.
