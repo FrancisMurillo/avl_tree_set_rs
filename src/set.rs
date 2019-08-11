@@ -24,35 +24,34 @@ impl<'a, T: 'a + Ord> AvlTreeSet<T> {
     }
 
     pub fn insert(&mut self, value: T) -> bool {
-        let mut prev_ptrs = Vec::<*mut AvlNode<T>>::new();
-        let mut current_tree = &mut self.root;
+        return tree_insert(&mut self.root, value);
 
-        while let Some(current_node) = current_tree {
-            prev_ptrs.push(&mut **current_node);
-
-            match current_node.value.cmp(&value) {
-                Ordering::Less => current_tree = &mut current_node.right,
-                Ordering::Equal => {
-                    return false;
-                }
-                Ordering::Greater => current_tree = &mut current_node.left,
+        fn tree_insert<T: Ord>(tree: &mut AvlTree<T>, value: T) -> bool {
+            match tree {
+                None => {
+                    *tree = Some(Box::new(AvlNode {
+                        value,
+                        left: None,
+                        right: None,
+                        height: 1,
+                    }));
+                    true
+                },
+                Some(node) => {
+                    let inserted =
+                        match node.value.cmp(&value) {
+                            Ordering::Equal => false,
+                            Ordering::Less => tree_insert(&mut node.right, value),
+                            Ordering::Greater => tree_insert(&mut node.left, value),
+                        };
+                    if inserted {
+                        node.update_height();
+                        node.rebalance();
+                    }
+                    inserted
+                },
             }
         }
-
-        *current_tree = Some(Box::new(AvlNode {
-            value,
-            left: None,
-            right: None,
-            height: 1,
-        }));
-
-        for node_ptr in prev_ptrs.into_iter().rev() {
-            let node = unsafe { &mut *node_ptr };
-            node.update_height();
-            node.rebalance();
-        }
-
-        true
     }
 
     pub fn take(&mut self, value: &T) -> Option<T> {
