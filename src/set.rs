@@ -2,7 +2,6 @@ use super::tree::{AvlNode, AvlTree};
 use core::iter::Peekable;
 use std::cmp::Ordering;
 use std::iter::FromIterator;
-use std::mem::replace;
 
 #[cfg(test)]
 use quickcheck::{Arbitrary, Gen};
@@ -55,6 +54,8 @@ impl<'a, T: 'a + Ord> AvlTreeSet<T> {
     }
 
     pub fn take(&mut self, value: &T) -> Option<T> {
+        return tree_take(&mut self.root, value);
+
         fn tree_take<T: Ord>(tree: &mut AvlTree<T>, value: &T) -> Option<T> {
             match tree {
                 None => return None,
@@ -72,80 +73,52 @@ impl<'a, T: 'a + Ord> AvlTreeSet<T> {
                     }
                 },
             }
-
             // If control flow fell through to here, it's because we hit the Equal case above. The
             // borrow of `tree` is now out of scope, but we know it's Some node whose value is
             // equal to `value`. We can `take()` it out of the tree to get ownership of it, and
             // then we can manipulate the node and insert parts of it back into the tree as needed.
 
-            let mut node = tree.take().unwrap();
-            return match node.left {
+            let node = tree.take().unwrap();
+            match node.left {
                 None => {
                     *tree = node.right;
-                    Some(node.value)
                 },
                 Some(left) => {
                     match node.right {
                         None => {
                             *tree = Some(left);
-                            Some(node.value)
                         },
                         Some(right) => {
-                            // This is the general case. There's both a `left` and a `right` node,
-                            // and we have ownership of them.
-                            if right.left.is_none() {
-                                let inner_value = replace(&mut node.value, right.value);
-
-                                node.right = right.right;
-                                node.left = Some(left);
-                                node.update_height();
-                                node.rebalance();
-                                tree.replace(node);
-
-                                Some(inner_value)
-                            } else {
-                                let mut some_right = Some(right);
-                                let right_tree = &mut some_right;
-
-                                let mut next_tree = right_tree;
-                                let mut inner_ptrs = Vec::<*mut AvlNode<T>>::new();
-
-                                while let Some(next_left_node) = next_tree {
-                                    if next_left_node.left.is_some() {
-                                        inner_ptrs.push(&mut **next_left_node);
-                                    }
-                                    next_tree = &mut next_left_node.left;
-                                }
-
-                                let parent_left_node = unsafe { &mut *inner_ptrs.pop().unwrap() };
-                                let mut leftmost_node = parent_left_node.left.take().unwrap();
-
-                                let inner_value = replace(&mut node.value, leftmost_node.value);
-                                replace(&mut parent_left_node.left, leftmost_node.right.take());
-
-                                parent_left_node.update_height();
-                                parent_left_node.rebalance();
-
-                                for node_ptr in inner_ptrs.into_iter().rev() {
-                                    let node = unsafe { &mut *node_ptr };
-                                    node.update_height();
-                                    node.rebalance();
-                                }
-
-                                node.left = Some(left);
-                                node.right = some_right;
-                                node.update_height();
-                                node.rebalance();
-                                tree.replace(node);
-
-                                Some(inner_value)
-                            }
+                            // This is the general case: the node to be removed has both a left and
+                            // a right child.
+                            let mut replacement = leftmost_to_top(right);
+                            replacement.left = Some(left);
+                            replacement.update_height();
+                            replacement.rebalance();
+                            *tree = Some(replacement);
                         }
                     }
                 }
             }
+            Some(node.value)
         }
-        tree_take(&mut self.root, value)
+
+        /// Returns a rotated version of `node` whose top has no left child and whose top has a
+        /// balanced right subtree.
+        fn leftmost_to_top<T: Ord>(mut node: Box<AvlNode<T>>) -> Box<AvlNode<T>> {
+            match node.left {
+                None => node,
+                Some(node_l) => {
+                    let mut next_top = leftmost_to_top(node_l);
+                    // By induction, next_top has no left child
+                    node.left = next_top.right;
+                    node.update_height();
+                    node.rebalance();
+                    next_top.right = Some(node);
+                    next_top
+                }
+            }
+        }
     }
 
     pub fn remove(&mut self, value: &T) -> bool {
